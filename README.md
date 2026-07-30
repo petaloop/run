@@ -9,7 +9,14 @@ curl -fsSL https://petaloop.run/process.sh | bash
 
 Run this command only when directed by the Principal. It requires a non-root
 Linux environment with Bash, curl, Git, OpenSSH, and GitHub's SSH host key
-already trusted.
+already trusted. Before generating a credential, the process performs a
+fail-closed readiness check that GitHub's currently presented Ed25519 host key
+is covered by that local trust. The clone then performs strict host verification
+again. The process never enrolls a host key automatically.
+
+If the readiness check fails, establish trust only after comparison with
+[GitHub's published SSH fingerprints](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/githubs-ssh-key-fingerprints).
+Never add unauthenticated `ssh-keyscan` output directly to `known_hosts`.
 
 The process presents a structured public-key request, pauses for the Principal's
 access action, and proceeds only after the Principal explicitly signals
