@@ -8,10 +8,16 @@ readonly PROGRAM_NAME="process.sh"
 readonly PRIVATE_REPOSITORY="git@github.com:petaloop/fabric.git"
 readonly GITHUB_SSH_HOST="github.com"
 readonly GITHUB_SSH_PORT="22"
+# Public trust anchor published at:
+# https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/githubs-ssh-key-fingerprints
+readonly GITHUB_ED25519_FINGERPRINT="SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU"
 
 KEY_DIRECTORY_TO_CLEAN=""
 KEY_FILE_TO_CLEAN=""
 PUBLIC_KEY_TO_CLEAN=""
+HOST_KEY_FILE_TO_CLEAN=""
+VERIFIED_GITHUB_KNOWN_HOST=""
+PUBLIC_KEY_PRESENTED=0
 ENGAGEMENT_COMPLETE=0
 
 cleanup() {
@@ -20,19 +26,24 @@ cleanup() {
 
     if [[ "$ENGAGEMENT_COMPLETE" -ne 1 &&
           -n "$KEY_DIRECTORY_TO_CLEAN" ]]; then
-        rm -f -- "$KEY_FILE_TO_CLEAN" "$PUBLIC_KEY_TO_CLEAN" ||
+        rm -f -- \
+            "$KEY_FILE_TO_CLEAN" \
+            "$PUBLIC_KEY_TO_CLEAN" \
+            "$HOST_KEY_FILE_TO_CLEAN" ||
             cleanup_ok=0
         rmdir -- "$KEY_DIRECTORY_TO_CLEAN" 2>/dev/null ||
             cleanup_ok=0
         if [[ "$cleanup_ok" -eq 1 ]]; then
             printf '%s\n' \
-                "Engagement did not complete; local key material was removed." >&2
+                "Engagement did not complete; local engagement material was removed." >&2
         else
             printf '%s\n' \
-                "Engagement did not complete; local key cleanup was incomplete." >&2
+                "Engagement did not complete; local engagement cleanup was incomplete." >&2
         fi
-        printf '%s\n' \
-            "If the public key was installed, the Principal must revoke it." >&2
+        if [[ "$PUBLIC_KEY_PRESENTED" -eq 1 ]]; then
+            printf '%s\n' \
+                "If the public key was installed, the Principal must revoke it." >&2
+        fi
     fi
     trap - EXIT
     exit "$status"
@@ -68,25 +79,21 @@ require_command() {
         die "required command is unavailable: $1" 69
 }
 
-preflight_github_host() {
+verify_github_host() {
     local phase="${1:-}"
     local failure_suffix=""
-    local trusted_bodies=""
-    local revoked_bodies=""
-    local known_hosts_file
-    local lookup_output
-    local lookup_status
     local scan_output
     local line
     local field1=""
     local field2=""
     local field3=""
     local field4=""
-    local scanned_body
-    local trusted_body
-    local revoked_body
+    local verified_body=""
+    local fingerprint_output
+    local fingerprint_bits=""
+    local fingerprint_value=""
+    local fingerprint_detail=""
     local scan_found=0
-    local trusted_match
 
     [[ "$phase" == "before-key" || "$phase" == "after-authorization" ]] ||
         die "internal host-verification phase is invalid" 70
@@ -94,97 +101,61 @@ preflight_github_host() {
         failure_suffix="; no deploy key was created"
     fi
 
-    for known_hosts_file in \
-        "${HOME}/.ssh/known_hosts" \
-        "${HOME}/.ssh/known_hosts2" \
-        "/etc/ssh/ssh_known_hosts" \
-        "/etc/ssh/ssh_known_hosts2"; do
-        [[ -e "$known_hosts_file" || -L "$known_hosts_file" ]] ||
-            continue
-        [[ -f "$known_hosts_file" && -r "$known_hosts_file" ]] ||
-            die "could not safely inspect SSH host-trust file: ${known_hosts_file}${failure_suffix}" 69
-
-        lookup_output=""
-        if lookup_output="$(
-            ssh-keygen -F "$GITHUB_SSH_HOST" \
-                -f "$known_hosts_file" 2>&1
-        )"; then
-            while IFS= read -r line; do
-                [[ -n "$line" && "$line" != \#* ]] || continue
-                field1=""
-                field2=""
-                field3=""
-                field4=""
-                IFS=$' \t' read -r field1 field2 field3 field4 _ <<<"$line"
-
-                if [[ "$field1" == "@revoked" &&
-                      "$field3" == "ssh-ed25519" &&
-                      -n "$field4" ]]; then
-                    [[ -z "$revoked_bodies" ]] ||
-                        revoked_bodies+=$'\n'
-                    revoked_bodies+="$field4"
-                elif [[ "$field1" != @* &&
-                        "$field2" == "ssh-ed25519" &&
-                        -n "$field3" ]]; then
-                    [[ -z "$trusted_bodies" ]] ||
-                        trusted_bodies+=$'\n'
-                    trusted_bodies+="$field3"
-                fi
-            done <<<"$lookup_output"
-        else
-            lookup_status="$?"
-            if [[ "$lookup_status" -eq 1 && -z "$lookup_output" ]]; then
-                continue
-            fi
-            die "could not inspect SSH host-trust file: ${known_hosts_file}${failure_suffix}" 69
-        fi
-    done
-
-    [[ -n "$trusted_bodies" ]] ||
-        die "GitHub's Ed25519 host key is not trusted; verify it against GitHub's official fingerprints and add it to ~/.ssh/known_hosts before rerunning${failure_suffix}" 69
-
+    VERIFIED_GITHUB_KNOWN_HOST=""
     scan_output="$(
-        ssh-keyscan -T 10 -p "$GITHUB_SSH_PORT" \
+        LC_ALL=C ssh-keyscan -T 10 -p "$GITHUB_SSH_PORT" \
             -t ed25519 "$GITHUB_SSH_HOST" 2>/dev/null
     )" ||
-        die "could not retrieve GitHub's Ed25519 host key for verification${failure_suffix}" 69
+        die "could not retrieve GitHub's SSH host identity${failure_suffix}" 69
     [[ -n "$scan_output" ]] ||
-        die "GitHub returned no Ed25519 host key${failure_suffix}" 69
+        die "GitHub returned no SSH host identity${failure_suffix}" 69
 
     while IFS= read -r line; do
         [[ -n "$line" && "$line" != \#* ]] || continue
         field1=""
         field2=""
         field3=""
-        IFS=$' \t' read -r field1 field2 field3 _ <<<"$line"
+        field4=""
+        IFS=$' \t' read -r field1 field2 field3 field4 <<<"$line"
         [[ ( "$field1" == "$GITHUB_SSH_HOST" ||
              "$field1" == "[${GITHUB_SSH_HOST}]:${GITHUB_SSH_PORT}" ) &&
            "$field2" == "ssh-ed25519" &&
-           -n "$field3" ]] ||
-            continue
-        scanned_body="$field3"
-        scan_found=1
+           -n "$field3" &&
+           -z "$field4" ]] ||
+            die "GitHub returned a malformed or unexpected SSH host identity${failure_suffix}" 77
 
-        while IFS= read -r revoked_body; do
-            [[ -n "$revoked_body" ]] || continue
-            [[ "$scanned_body" != "$revoked_body" ]] ||
-                die "GitHub's presented Ed25519 host key is marked revoked locally${failure_suffix}" 77
-        done <<<"$revoked_bodies"
+        fingerprint_output="$(
+            printf '%s %s\n' "$field2" "$field3" |
+                LC_ALL=C ssh-keygen -l -E sha256 -f - 2>/dev/null
+        )" ||
+            die "could not fingerprint GitHub's SSH host identity; OpenSSH 6.8 or newer is required${failure_suffix}" 69
+        [[ -n "$fingerprint_output" &&
+           "$fingerprint_output" != *$'\n'* ]] ||
+            die "GitHub's SSH host fingerprint output was malformed${failure_suffix}" 77
 
-        trusted_match=0
-        while IFS= read -r trusted_body; do
-            [[ -n "$trusted_body" ]] || continue
-            if [[ "$scanned_body" == "$trusted_body" ]]; then
-                trusted_match=1
-                break
-            fi
-        done <<<"$trusted_bodies"
-        [[ "$trusted_match" -eq 1 ]] ||
-            die "GitHub's presented Ed25519 host key does not match the trusted local entry${failure_suffix}" 77
+        fingerprint_bits=""
+        fingerprint_value=""
+        fingerprint_detail=""
+        IFS=$' \t' read -r \
+            fingerprint_bits fingerprint_value fingerprint_detail \
+            <<<"$fingerprint_output"
+        [[ "$fingerprint_bits" == "256" &&
+           "$fingerprint_value" == "$GITHUB_ED25519_FINGERPRINT" &&
+           -n "$fingerprint_detail" ]] ||
+            die "GitHub's SSH host identity does not match the pinned official fingerprint${failure_suffix}" 77
+
+        if [[ -z "$verified_body" ]]; then
+            verified_body="$field3"
+        else
+            [[ "$verified_body" == "$field3" ]] ||
+                die "GitHub returned inconsistent SSH host identities${failure_suffix}" 77
+        fi
+        scan_found=$((scan_found + 1))
     done <<<"$scan_output"
 
-    [[ "$scan_found" -eq 1 ]] ||
-        die "GitHub returned no usable Ed25519 host key${failure_suffix}" 69
+    [[ "$scan_found" -gt 0 && -n "$verified_body" ]] ||
+        die "GitHub returned no usable SSH host identity${failure_suffix}" 69
+    VERIFIED_GITHUB_KNOWN_HOST="${GITHUB_SSH_HOST} ssh-ed25519 ${verified_body}"
 }
 
 main() {
@@ -215,7 +186,8 @@ main() {
     exec 3<>/dev/tty ||
         die "could not open the private interactive terminal" 75
 
-    preflight_github_host before-key
+    verify_github_host before-key
+    local initial_verified_github_host="$VERIFIED_GITHUB_KNOWN_HOST"
 
     local destination="${HOME}/petaloop-workspaces/fabric"
     [[ "$destination" != "/" &&
@@ -243,8 +215,10 @@ main() {
 
     local key_file="${key_directory}/id_ed25519"
     local public_key="${key_file}.pub"
+    local host_key_file="${key_directory}/github_known_hosts"
     KEY_FILE_TO_CLEAN="$key_file"
     PUBLIC_KEY_TO_CLEAN="$public_key"
+    HOST_KEY_FILE_TO_CLEAN="$host_key_file"
     local public_type
     local public_body
     local public_comment
@@ -253,6 +227,11 @@ main() {
     local ssh_command
     local notes_status
     local destination_quoted
+
+    printf '%s\n' "$initial_verified_github_host" >"$host_key_file" ||
+        die "could not create the isolated GitHub host-trust file" 73
+    chmod 600 -- "$host_key_file" ||
+        die "could not secure the isolated GitHub host-trust file" 73
 
     ssh-keygen -q -t ed25519 -a 100 -N '' -C '' -f "$key_file" ||
         die "ssh-keygen failed" 70
@@ -267,6 +246,7 @@ main() {
        -z "${public_comment:-}" ]] ||
         die "the generated Ed25519 key pair is invalid" 65
 
+    PUBLIC_KEY_PRESENTED=1
     cat >&3 <<EOF
 
 ============================================================
@@ -303,16 +283,19 @@ EOF
     [[ "$confirmation" == "AUTHORIZED" ]] ||
         die "authorization was not confirmed" 75
 
-    preflight_github_host after-authorization
+    verify_github_host after-authorization
+    [[ "$VERIFIED_GITHUB_KNOWN_HOST" == "$initial_verified_github_host" ]] ||
+        die "GitHub's verified SSH host identity changed during authorization" 77
 
     ssh_command="ssh -F /dev/null -i ${key_file}"
     ssh_command+=" -o HostName=${GITHUB_SSH_HOST}"
     ssh_command+=" -o HostKeyAlias=${GITHUB_SSH_HOST}"
     ssh_command+=" -o Port=${GITHUB_SSH_PORT}"
     ssh_command+=" -o HostKeyAlgorithms=ssh-ed25519"
-    ssh_command+=" -o 'UserKnownHostsFile=${HOME}/.ssh/known_hosts ${HOME}/.ssh/known_hosts2'"
-    ssh_command+=" -o 'GlobalKnownHostsFile=/etc/ssh/ssh_known_hosts /etc/ssh/ssh_known_hosts2'"
+    ssh_command+=" -o UserKnownHostsFile=${host_key_file}"
+    ssh_command+=" -o GlobalKnownHostsFile=/dev/null"
     ssh_command+=" -o CheckHostIP=no -o CanonicalizeHostname=no"
+    ssh_command+=" -o ProxyCommand=none"
     ssh_command+=" -o IdentitiesOnly=yes -o BatchMode=yes"
     ssh_command+=" -o PreferredAuthentications=publickey"
     ssh_command+=" -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no"
