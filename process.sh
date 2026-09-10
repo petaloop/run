@@ -100,15 +100,17 @@ usage() {
     cat <<'EOF'
 Usage:
   umask 077
-  bootstrap_dir="$(mktemp -d "${TMPDIR:-/tmp}/petaloop-run.XXXXXX")"
-  curl --disable --proto '=https' --tlsv1.2 --location \
+  bootstrap_dir="$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/petaloop-run.XXXXXX")"
+  /usr/bin/curl --disable --proto '=https' --tlsv1.2 --location \
     --proto-redir '=https' --fail --silent --show-error \
     --output "${bootstrap_dir}/process.sh" \
     https://petaloop.run/process.sh
   # Verify the Principal-supplied byte length and SHA-256, then:
-  /usr/bin/env -u BASH_ENV -u ENV /bin/bash -n \
-    "${bootstrap_dir}/process.sh"
-  /usr/bin/env -u BASH_ENV -u ENV /bin/bash \
+  /usr/bin/env -i HOME="${HOME}" TERM="${TERM:-dumb}" \
+    PATH=/usr/bin:/bin:/usr/sbin:/sbin PETALOOP_CLEAN_LAUNCH=1 \
+    /bin/bash -n "${bootstrap_dir}/process.sh"
+  /usr/bin/env -i HOME="${HOME}" TERM="${TERM:-dumb}" \
+    PATH=/usr/bin:/bin:/usr/sbin:/sbin PETALOOP_CLEAN_LAUNCH=1 /bin/bash \
     "${bootstrap_dir}/process.sh" \
     --source-commit <40-lowercase-hex> \
     --source-length <positive-byte-count> \
@@ -342,6 +344,9 @@ main() {
        "$7" == "--access-mode" ]] ||
         die "first engagement requires the exact Principal-authorized source identity" 64
 
+    [[ "${PETALOOP_CLEAN_LAUNCH:-}" == "1" ]] ||
+        die "first engagement requires the documented clean-environment launcher" 77
+
     local authorized_source_commit="$2"
     local authorized_source_length="$4"
     local authorized_source_sha256="$6"
@@ -399,6 +404,10 @@ main() {
         die "the resolved bootstrap path contains unsupported characters" 64
     [[ -f "$script_path" && ! -L "$script_path" && -O "$script_path" ]] ||
         die "the bootstrap must be an owned non-symlink regular file" 77
+    require_exact_owned_mode "$invocation_directory" 700 \
+        "bootstrap directory" "$platform"
+    require_exact_owned_mode "$script_path" 600 \
+        "bootstrap file" "$platform"
     script_byte_length="$(wc -c <"$script_path")" ||
         die "could not measure the bootstrap byte length" 69
     script_byte_length="${script_byte_length//[[:space:]]/}"
@@ -714,6 +723,7 @@ EOF
 {
   "schema_version": "1.0.0",
   "process_version": "${PROCESS_VERSION}",
+  "clean_environment_launcher": "REQUIRED_AND_PRESENT",
   "authorized_source_commit": "${authorized_source_commit}",
   "authorized_source_byte_length": ${authorized_source_length},
   "authorized_source_sha256": "${authorized_source_sha256}",

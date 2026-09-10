@@ -11,8 +11,8 @@ stream moving network bytes directly into a shell for a controlled ceremony:
 
 ```bash
 umask 077
-bootstrap_dir="$(mktemp -d "${TMPDIR:-/tmp}/petaloop-run.XXXXXX")"
-curl --disable --proto '=https' --tlsv1.2 --location \
+bootstrap_dir="$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/petaloop-run.XXXXXX")"
+/usr/bin/curl --disable --proto '=https' --tlsv1.2 --location \
   --proto-redir '=https' --fail --silent --show-error \
   --output "${bootstrap_dir}/process.sh" \
   https://petaloop.run/process.sh
@@ -25,9 +25,11 @@ Then use the system Bash without ambient startup files, passing those exact
 public provenance values back to the bootstrap:
 
 ```bash
-/usr/bin/env -u BASH_ENV -u ENV /bin/bash -n \
-  "${bootstrap_dir}/process.sh"
-/usr/bin/env -u BASH_ENV -u ENV /bin/bash \
+/usr/bin/env -i HOME="${HOME}" TERM="${TERM:-dumb}" \
+  PATH=/usr/bin:/bin:/usr/sbin:/sbin PETALOOP_CLEAN_LAUNCH=1 \
+  /bin/bash -n "${bootstrap_dir}/process.sh"
+/usr/bin/env -i HOME="${HOME}" TERM="${TERM:-dumb}" \
+  PATH=/usr/bin:/bin:/usr/sbin:/sbin PETALOOP_CLEAN_LAUNCH=1 /bin/bash \
   "${bootstrap_dir}/process.sh" \
   --source-commit <40-lowercase-hex> \
   --source-length <positive-byte-count> \
@@ -35,11 +37,16 @@ public provenance values back to the bootstrap:
   --access-mode <READ_ONLY-or-READ_WRITE>
 ```
 
-The script resolves its own non-symlink file, recomputes its byte length and
-SHA-256 before network access or key creation, requires equality with the
-Principal-authorized values, and records both values in the local lifecycle
-record. The commit is Principal-supplied provenance; the byte identity is the
-locally enforced input.
+The clean launcher prevents inherited shell functions and unrelated environment
+configuration from shadowing security-critical commands before verification.
+The script rejects engagement execution without that launcher. It also requires
+the bootstrap directory and file to be owned, non-symlink, mode 0700/0600, and
+free of permissive macOS ACLs.
+
+The script resolves its own file, recomputes its byte length and SHA-256 before
+network access or key creation, requires equality with the Principal-authorized
+values, and records both values in the local lifecycle record. The commit is
+Principal-supplied provenance; the byte identity is the locally enforced input.
 
 The environment must be non-root and supply system Bash, Git, and OpenSSH 6.8
 or newer. The script restricts its runtime path and ignores ambient system and
