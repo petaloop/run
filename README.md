@@ -1,28 +1,36 @@
 # Petaloop Run
 
-Petaloop Run process 2.0.0 establishes a Principal-mediated first engagement
+Petaloop Run process 2.0.1 establishes a Principal-mediated first engagement
 with the private `petaloop/fabric` repository from a private, unrecorded Linux
 or macOS terminal.
 
 ## Controlled bootstrap
 
-Run the bootstrap only at the Principal's invitation. Download first; never
-stream moving network bytes directly into a shell for a controlled ceremony:
+For an ordinary read-only engagement, use the governed Stage-0 launcher
+documented at `https://petaloop.run/BOOTSTRAP.md`. Stage 0 pins this Stage-1
+file by commit, byte length, and SHA-256 and always requests `READ_ONLY`.
+
+For a direct Stage-1 engagement, including any separately authorized
+`READ_WRITE` request, run only at the Principal's invitation. Obtain an
+immutable HTTPS source URL, commit, exact byte length, and SHA-256 from the
+Principal through the governed channel. Download first; never stream moving
+Stage-1 network bytes directly into a shell:
 
 ```bash
 umask 077
 bootstrap_dir="$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/petaloop-run.XXXXXX")"
-/usr/bin/curl --disable --proto '=https' --tlsv1.2 --location \
-  --proto-redir '=https' --fail --silent --show-error \
-  --output "${bootstrap_dir}/process.sh" \
-  https://petaloop.run/process.sh
+stage1_url='<Principal-supplied-immutable-HTTPS-URL>'
+/usr/bin/env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+  /usr/bin/curl --disable --proto '=https' --tlsv1.2 --location \
+    --proto-redir '=https' --fail --silent --show-error \
+    --output "${bootstrap_dir}/process.sh" \
+    "${stage1_url}"
 ```
 
-Obtain the authorized source commit, exact byte length, and SHA-256 from the
-Principal through the governed channel. Verify all three before execution. A
-digest served only beside the mutable script is not an independent trust root.
-Then use the system Bash without ambient startup files, passing those exact
-public provenance values back to the bootstrap:
+Verify the supplied source tuple before execution. A digest served only beside
+the fetched script is not an independent trust root. Then use the system Bash
+without ambient startup files, passing those exact public provenance values
+back to the bootstrap:
 
 ```bash
 /usr/bin/env -i HOME="${HOME}" TERM="${TERM:-dumb}" \

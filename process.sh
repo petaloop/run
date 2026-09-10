@@ -5,7 +5,7 @@ set +x
 umask 077
 
 readonly PROGRAM_NAME="process.sh"
-readonly PROCESS_VERSION="2.0.0"
+readonly PROCESS_VERSION="2.0.1"
 readonly PRIVATE_REPOSITORY="git@github.com:petaloop/fabric.git"
 readonly GITHUB_SSH_HOST="github.com"
 readonly GITHUB_SSH_PORT="22"
@@ -99,12 +99,19 @@ die() {
 usage() {
     cat <<'EOF'
 Usage:
+  # Preferred READ_ONLY entry: use the governed Stage-0 launcher documented at
+  # https://petaloop.run/BOOTSTRAP.md
+
+  # Direct Stage-1 acquisition requires a Principal-supplied immutable HTTPS
+  # URL and the exact source tuple below.
   umask 077
   bootstrap_dir="$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/petaloop-run.XXXXXX")"
-  /usr/bin/curl --disable --proto '=https' --tlsv1.2 --location \
-    --proto-redir '=https' --fail --silent --show-error \
-    --output "${bootstrap_dir}/process.sh" \
-    https://petaloop.run/process.sh
+  stage1_url='<Principal-supplied-immutable-HTTPS-URL>'
+  /usr/bin/env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+    /usr/bin/curl --disable --proto '=https' --tlsv1.2 --location \
+      --proto-redir '=https' --fail --silent --show-error \
+      --output "${bootstrap_dir}/process.sh" \
+      "${stage1_url}"
   # Verify the Principal-supplied byte length and SHA-256, then:
   /usr/bin/env -i HOME="${HOME}" TERM="${TERM:-dumb}" \
     PATH=/usr/bin:/bin:/usr/sbin:/sbin PETALOOP_CLEAN_LAUNCH=1 \
