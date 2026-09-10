@@ -1,6 +1,6 @@
 # Petaloop Run
 
-Petaloop Run process 2.0.1 establishes a Principal-mediated first engagement
+Petaloop Run process 2.0.2 establishes a Principal-mediated first engagement
 with the private `petaloop/fabric` repository from a private, unrecorded Linux
 or macOS terminal.
 
@@ -110,6 +110,20 @@ paths it created. If the public key may have been installed, it reports the
 fingerprint that the Principal must inspect and revoke. `SIGKILL`, power loss,
 hostile same-user races, and a compromised host or system toolchain remain
 outside what a Bash cleanup trap can guarantee.
+
+## Portability verification
+
+Run the static portability gate on every supported host before release:
+
+```bash
+/bin/bash tests/process-portability.sh
+```
+
+The gate checks Bash syntax and version output and rejects the GNU-only
+`chmod MODE -- PATH` operand order that BSD `chmod` on macOS interprets as a
+literal path. All chmod targets used by this process are absolute,
+process-constructed paths, so omitting that misplaced separator does not admit
+an option-like target.
 
 ## Context boundary
 

@@ -5,7 +5,7 @@ set +x
 umask 077
 
 readonly PROGRAM_NAME="process.sh"
-readonly PROCESS_VERSION="2.0.1"
+readonly PROCESS_VERSION="2.0.2"
 readonly PRIVATE_REPOSITORY="git@github.com:petaloop/fabric.git"
 readonly GITHUB_SSH_HOST="github.com"
 readonly GITHUB_SSH_PORT="22"
@@ -454,7 +454,7 @@ main() {
        ( -d "$destination_parent" && ! -L "$destination_parent" ) ]] ||
         die "refusing an unsafe workspace parent" 77
     mkdir -p -- "$destination_parent"
-    chmod 700 -- "$destination_parent" ||
+    chmod 700 "$destination_parent" ||
         die "could not secure the workspace parent" 73
     require_owned_plain_directory "$destination_parent" "workspace parent" "$platform"
 
@@ -463,7 +463,7 @@ main() {
        ( -d "$ssh_parent" && ! -L "$ssh_parent" ) ]] ||
         die "refusing an unsafe SSH directory" 77
     mkdir -p -- "$ssh_parent"
-    chmod 700 -- "$ssh_parent" ||
+    chmod 700 "$ssh_parent" ||
         die "could not secure the SSH directory" 73
     require_owned_plain_directory "$ssh_parent" "SSH directory" "$platform"
 
@@ -472,7 +472,7 @@ main() {
        ( -d "$key_parent" && ! -L "$key_parent" ) ]] ||
         die "refusing an unsafe engagement-key parent" 77
     mkdir -p -- "$key_parent"
-    chmod 700 -- "$key_parent" ||
+    chmod 700 "$key_parent" ||
         die "could not secure the engagement-key parent" 73
     require_owned_plain_directory "$key_parent" "engagement-key parent" "$platform"
 
@@ -480,7 +480,7 @@ main() {
     key_directory="$(mktemp -d "${key_parent}/engagement.XXXXXX")" ||
         die "could not create the local key directory" 73
     KEY_DIRECTORY_TO_CLEAN="$key_directory"
-    chmod 700 -- "$key_directory" ||
+    chmod 700 "$key_directory" ||
         die "could not secure the local key directory" 73
     require_owned_plain_directory "$key_directory" "engagement-key directory" "$platform"
 
@@ -495,7 +495,7 @@ main() {
     LIFECYCLE_FILE_TO_CLEAN="$lifecycle_file"
     mkdir -- "$hooks_directory" ||
         die "could not create the isolated empty-hooks directory" 73
-    chmod 700 -- "$hooks_directory" ||
+    chmod 700 "$hooks_directory" ||
         die "could not secure the isolated empty-hooks directory" 73
     require_owned_plain_directory "$hooks_directory" "empty-hooks directory" "$platform"
     local public_type
@@ -526,14 +526,14 @@ main() {
 
     printf '%s\n' "$initial_verified_github_host" >"$host_key_file" ||
         die "could not create the isolated GitHub host-trust file" 73
-    chmod 600 -- "$host_key_file" ||
+    chmod 600 "$host_key_file" ||
         die "could not secure the isolated GitHub host-trust file" 73
     require_exact_owned_mode "$host_key_file" 600 \
         "GitHub host-trust file" "$platform"
 
     ssh-keygen -q -t ed25519 -a 100 -N '' -C '' -f "$key_file" ||
         die "ssh-keygen failed" 70
-    chmod 600 -- "$key_file" "$public_key" ||
+    chmod 600 "$key_file" "$public_key" ||
         die "could not secure the generated key pair" 73
     require_exact_owned_mode "$key_file" 600 "private key" "$platform"
     require_exact_owned_mode "$public_key" 600 "public key" "$platform"
@@ -665,7 +665,7 @@ EOF
         die "clone destination appeared or could not be reserved" 73
     DESTINATION_TO_CLEAN="$destination"
     DESTINATION_CREATED=1
-    chmod 700 -- "$destination" ||
+    chmod 700 "$destination" ||
         die "could not secure the clone destination" 73
     require_owned_plain_directory "$destination" "clone destination" "$platform"
     workspace="$destination"
@@ -759,7 +759,7 @@ EOF
   "revocation_order": "PRINCIPAL_REVOKES_GITHUB_DEPLOY_KEY_THEN_OPERATOR_REMOVES_LOCAL_KEY_AND_WORKSPACE"
 }
 EOF
-    chmod 600 -- "$lifecycle_file" ||
+    chmod 600 "$lifecycle_file" ||
         die "could not secure the credential lifecycle record" 73
     require_exact_owned_mode "$lifecycle_file" 600 \
         "credential lifecycle record" "$platform"
